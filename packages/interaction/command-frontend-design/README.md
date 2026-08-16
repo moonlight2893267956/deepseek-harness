@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-command-frontend-design
 
+English | [中文](README.zh.md)
+
 Human-facing `/frontend-design` command. The plugin registers one global command
 through [`ctx.commands`](../../interaction/commands/README.md), so every composed
 command adapter discovers it; a UI adapter executes it without a model turn.

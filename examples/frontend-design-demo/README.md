@@ -6,7 +6,7 @@ A composition fragment that wires the `/frontend-design` command into any
 harness profile.
 
 The command itself lives in
-[`@deepseek-ai/dsh-command-frontend-design`](../../packages/interaction/commands/command-frontend-design).
+[`@deepseek-ai/dsh-command-frontend-design`](../../packages/interaction/command-frontend-design).
 It registers one global command through `ctx.commands` and renders the
 `frontend-design` disk skill (`.agents/skills/frontend-design/SKILL.md`) back to
 the user without starting a model turn.

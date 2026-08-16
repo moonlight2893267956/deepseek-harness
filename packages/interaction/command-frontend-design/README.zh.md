@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-command-frontend-design
 
+中文 | [English](README.md)
+
 面向人类的 `/frontend-design` 命令。该插件通过
 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令，因此所有
 组合的指令适配器都能发现它；UI 适配器执行它时不会启动模型轮次。

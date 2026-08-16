@@ -461,6 +461,9 @@ importers:
       '@deepseek-ai/dsh-command-feedback':
         specifier: workspace:*
         version: link:../packages/feedback/command-feedback
+      '@deepseek-ai/dsh-command-frontend-design':
+        specifier: workspace:*
+        version: link:../packages/interaction/command-frontend-design
       '@deepseek-ai/dsh-command-goal':
         specifier: workspace:*
         version: link:../packages/goal/command-goal
