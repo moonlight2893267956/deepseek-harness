@@ -172,6 +172,7 @@
     { "path": "./packages/goal/goal-round-driver" },
     { "path": "./packages/goal/command-goal" },
     { "path": "./packages/feedback/command-feedback" },
+    { "path": "./packages/interaction/command-frontend-design" },
     { "path": "./packages/schedule/schedule" },
     { "path": "./packages/context/time-context" },
     { "path": "./packages/context/tmux-context" },

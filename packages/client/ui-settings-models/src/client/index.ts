@@ -24,11 +24,14 @@ import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { refreshWelcomeIfLoaded, WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
+import { VisionSettingsSection } from './VisionSettingsSection.tsx'
+import type { VisionConfig, VisionSettingsSectionInjected } from './VisionSettingsSection.tsx'
 import { en, zh, type ModelsKey } from './locales.ts'
 import { WELCOME_NOTICE_SETTINGS_NAMESPACE } from '../onboarding-copy.ts'
 
 export type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
 export type { ModelsKey } from './locales.ts'
+export type { VisionConfig, VisionSettingsSectionInjected, VisionSettingsSectionProps } from './VisionSettingsSection.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -56,7 +59,7 @@ export function refreshIfLoaded(controller: ModelsSettingsStore): void {
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registration depends on each slot through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
 
 /**
  * Register the Models section once the `settings.section` declaration is on
@@ -82,6 +85,16 @@ export function apply(ctx: ClientContext): void {
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     controller,
     hooks: { models: controller.store },
+    api: connection.api,
+    t,
+  })
+  // The vision section binds its own namespace scope: it edits `dsh-vision`
+  // alone, so it reads one namespace instead of the whole Models join.
+  const visionScope = ctx.settingsScope.bind<VisionConfig>({ namespace: 'dsh-vision' })
+  const useVisionSnapshot = bindSnapshotSelector(visionScope)
+  const visionInjected = (): VisionSettingsSectionInjected => ({
+    scope: visionScope,
+    useSnapshot: useVisionSnapshot,
     api: connection.api,
     t,
   })
@@ -122,6 +135,13 @@ export function apply(ctx: ClientContext): void {
     label: () => t('nav'),
     inject: injected,
   }, ModelsSection))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'vision',
+    order: 20,
+    label: () => t('modelVisionTitle'),
+    inject: visionInjected,
+  }, VisionSettingsSection))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'welcome-notice',

@@ -1,0 +1,34 @@
+# Composition fragment for the `/frontend-design` command.
+#
+# This file is a reusable Cordis layer, not a standalone boot entry: mount it
+# into a profile whose base already provides the spine (agent, session, model
+# adapter). Compose it with the include plugin from another config:
+#
+#   - name: '@deepseek-ai/cordis-plugin-include'
+#     config:
+#       include:
+#         - './frontend-design-demo/cordis.yml'
+#
+# The `frontend-design` disk skill is discovered from the default skill roots
+# (including the repository's `.agents/skills`, rank 200) by the filesystem
+# provider when `includeDefaultRoots` is true, so no skill wiring is needed
+# here. The command plugin only needs `commands`, `skills`, and that provider.
+
+# Global command registry: every composed command adapter discovers commands
+# through this service.
+- id: commands
+  name: '@deepseek-ai/dsh-commands'
+
+# Skill registry: holds the discovered `frontend-design` disk skill.
+- id: skills
+  name: '@deepseek-ai/dsh-skill'
+
+# Filesystem skill provider: scans `.agents/skills`, `$DSH_HOME/skills`, and
+# friends. `includeDefaultRoots` defaults to true, so the repository's
+# `.agents/skills/frontend-design/SKILL.md` is picked up automatically.
+- id: skill-fs
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+# The command plugin: registers `/frontend-design` and renders the skill.
+- id: frontend-design-cmd
+  name: '@deepseek-ai/dsh-command-frontend-design'

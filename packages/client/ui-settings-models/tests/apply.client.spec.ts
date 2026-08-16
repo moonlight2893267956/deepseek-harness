@@ -9,6 +9,7 @@ import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-setti
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
 import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
+import { VisionSettingsSection } from '../src/client/VisionSettingsSection.tsx'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -25,6 +26,16 @@ async function bench(isLoopback = true) {
   // The apply path only captures the wire face; no call leaves this fake
   // until a section actually loads.
   ctx.provide('connection', { api: {}, isLoopback } as never)
+  // The vision section binds one namespace scope at apply; the binding just
+  // needs to be a reactive object — the editor only reads it when rendered.
+  ctx.provide('settingsScope', {
+    bind: () => ({
+      getSnapshot: () => ({ status: 'loading', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'host' }),
+      subscribe: () => () => {},
+      set: async () => {},
+      unset: async () => {},
+    }),
+  } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale }
 }
 
@@ -43,7 +54,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-settings-models apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
   })
 
   it('registers the models nav entry for declarations before or after apply', async () => {
@@ -75,6 +86,17 @@ describe('ui-settings-models apply', () => {
     )()
     expect(deepSeekInjected.hooks.models).toBe(injected.controller.store)
     expect(deepSeekInjected.api).toBeDefined()
+    const vision = before.slots.entries('settings.section')
+      .find(entry => entry.options.id === 'vision')!
+    expect(vision.component).toBe(VisionSettingsSection)
+    expect(vision.options).toMatchObject({ id: 'vision', order: 20 })
+    expect(resolveSlotLabel(vision.options.label)).toBe('视觉理解')
+    const visionInjected = (
+      vision.inject as unknown as () => import('../src/client/VisionSettingsSection.tsx').VisionSettingsSectionInjected
+    )()
+    expect(visionInjected.t('modelVisionTitle')).toBe('视觉理解')
+    expect(visionInjected.scope.getSnapshot().status).toBe('loading')
+    expect(typeof visionInjected.useSnapshot).toBe('function')
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
@@ -85,7 +107,7 @@ describe('ui-settings-models apply', () => {
     expect(after.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
     expect(after.slots.entries('settings.onboarding')).toHaveLength(2)
     // The self-inflicted ledger notifications hit the duplicate guard.
-    expect(after.slots.entries('settings.section')).toHaveLength(1)
+    expect(after.slots.entries('settings.section')).toHaveLength(2)
   })
 
   it('the label thunk follows the active locale without re-registration', async () => {
@@ -113,7 +135,7 @@ describe('ui-settings-models apply', () => {
     const b = await bench()
     const redeclare = declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(b.slots.entries('settings.section')).toHaveLength(1)
+    expect(b.slots.entries('settings.section')).toHaveLength(2)
     // Declarer unload: the cascade removes our entry while our local
     // disposer variable goes stale.
     redeclare()

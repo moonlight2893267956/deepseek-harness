@@ -21,7 +21,6 @@ import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsState, ModelsSettingsStore, ProviderRow } from './store.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
-import { VisionSection } from './VisionSection.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -392,20 +391,6 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           )
         })}
       </ul>
-      {state.namespaces.has('dsh-vision')
-        ? (() => {
-          const visionNs = state.namespaces.get('dsh-vision')
-          return visionNs === undefined
-            ? null
-            : (
-              <VisionSection
-                namespace={visionNs}
-                api={api}
-                t={t}
-              />
-            )
-        })()
-        : null}
       <div className={styles['addBlock']}>
         {addTarget !== undefined && addNamespace !== undefined
           ? (

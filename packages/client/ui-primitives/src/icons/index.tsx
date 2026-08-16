@@ -460,6 +460,20 @@ export const IconEnhanceOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_eye_outline_16 (harness-only figma extract): lens ring + pupil — the
+ *  vision-understanding glyph. The ring knocks out to transparency via the
+ *  evenodd lens pair, so the pupil rides the same currentColor on any fill. */
+export const IconEyeOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8 3.4C4.55 3.4 2.02 6.06 1.18 7.72C0.98 8.1 0.98 8.56 1.18 8.94C2.02 10.6 4.55 13.26 8 13.26C11.45 13.26 13.98 10.6 14.82 8.94C15.02 8.56 15.02 8.1 14.82 7.72C13.98 6.06 11.45 3.4 8 3.4ZM8 5C5.28 5 3.24 7.13 2.55 8.33C2.4 8.6 2.4 8.9 2.55 9.17C3.24 10.37 5.28 12.5 8 12.5C10.72 12.5 12.76 10.37 13.45 9.17C13.6 8.9 13.6 8.6 13.45 8.33C12.76 7.13 10.72 5 8 5ZM8 6.6C7.23 6.6 6.6 7.23 6.6 8C6.6 8.77 7.23 9.4 8 9.4C8.77 9.4 9.4 8.77 9.4 8C9.4 7.23 8.77 6.6 8 6.6Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** ic_ds_trash_outline_16 */
 export const IconTrashOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
