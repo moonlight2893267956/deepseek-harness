@@ -18,18 +18,22 @@
 
 ## 配置
 
-每个字段都随部署变化，并在加载时校验；必填字段缺失会 loud 失败。
+每个字段都随部署变化。插件注册了一个 `dsh-vision` settings 段：cordis.yml 里的 entry `config`（或 base bundle）是 **base 层**，而 `settings.yaml`（或 Web UI）里的用户覆盖构成 **user 层**。当 settings 服务缺失时（例如不带 settings 提供方的 headless 运行），该段回退到 entry config，因此不会丢失配置。`visionProvider` / `visionModel` 带有 schema 默认值（`dashscope` / `qwen3.8-max`），所以空 base 也能通过校验；真实部署值来自 user 层。
 
 | 键 | 契约 |
 | --- | --- |
-| `visionProvider` | 视觉引擎 provider 路由，复用已注册的 `LlmRuntime` 路由。必填。 |
-| `visionModel` | 视觉引擎模型 id。必填。 |
+| `visionProvider` | 视觉引擎 provider 路由，复用已注册的 `LlmRuntime` 路由。可选；默认 `dashscope`。 |
+| `visionModel` | 视觉引擎模型 id。可选；默认 `qwen3.8-max`。 |
 | `visionPrompt` | 发给视觉模型的系统提示词。可选；合理默认要求忠实描述图片（有文字则转写、无文字则描述画面、绝不编造文件名）。 |
 | `visionMaxTokens` | 发给视觉子调用的 `max_tokens` 上限。可选；不设置时请求不带 `max_tokens`，由视觉模型自身的输出上限决定（qwen3.8-max 为 128K）。对于长截图，若完整转写会在模型默认值处被截断，可设置此值抬高上限。必须为正整数且不超过视觉模型的输出上限。 |
 | `visionProvenance` | 在 `replace` 模式下为描述文本添加的前缀，提示下游模型该文本来自图片。可选；默认 `[Image understanding]\n`；设为空字符串可关闭。 |
-| `mode` | `replace` 用文本替换图片；`append` 保留图片并追加文本。必填。 |
+| `mode` | `replace` 用文本替换图片；`append` 保留图片并追加文本。可选；默认 `replace`。 |
 | `enabled` | 总开关；为 `false` 时监听器原样透传消息。默认 `true`。 |
 | `onFailure` | `pass` 保留图片、`throw` 中止、`skip` 在识别失败时丢弃图片。默认 `pass`。 |
+
+### 通过 Web UI 编辑
+
+「模型」设置页（由 `@deepseek-ai/dsh-client-ui-settings-models` 提供）渲染一张 **视觉理解** 卡片，背后就是 `dsh-vision` 命名空间。每个字段立即通过 wire 写入（`api.settings.mutate` 的 set/unset），因此改动会在**不重启**的情况下热生效到运行中的插件。被用户覆盖的字段显示琥珀色圆点；点其重置可单独 unset 回 base 层，「重置全部自定义」则清空所有覆盖。settings 段 hook 会在每次 attach/detach/commit 时更新 `VisionService.enabled` / `VisionService.mode`，因此 `agent/pre-step` 监听器与宿主图片准入始终读取最新值。
 
 ## 按模型选择是否预处理
 
@@ -58,23 +62,17 @@ models:
 
 ### 1. 在 profile / patch 中挂载插件
 
-将以下内容作为 `insert` 项加入你的 Cordis 配置（profile 的 `cordis.yml`，或用户级 patch 如 `~/.dsh/cordis.patch.yml`）：
+将以下内容作为 `insert` 项加入你的 Cordis 配置（profile 的 `cordis.yml`，或用户级 patch 如 `~/.dsh/cordis.patch.yml`）。插件**不带 `config`**——部署值放在 `dsh-vision` settings 段（见「配置」）：
 
 ```yaml
 - insert:
     - id: vision
       name: '@deepseek-ai/dsh-vision'
-      config:
-        visionProvider: dashscope        # 复用已注册的 LlmRuntime provider 路由
-        visionModel: qwen3.8-max         # 具备视觉能力的模型（即视觉引擎）
-        mode: replace                    # replace | append
-        onFailure: pass                  # pass | skip | throw
-        # visionPrompt: 自定义系统提示词（可选）
-        # visionProvenance: 'Image understanding:\n'   # 自定义前缀（可选）
-        # visionMaxTokens: 128000      # 限制视觉子调用输出上限（可选；长截图可抬高）
+      # visionProvider / visionModel / mode / onFailure / ... 都在 settings.yaml 的 dsh-vision 段，
+      # 或 Web UI「模型」页 →「视觉理解」卡片里。
 ```
 
-`visionProvider` / `visionModel` 指向一个**具备视觉能力**的模型（即视觉引擎），它可与下游纯文本主模型不同。配置在加载时校验；缺失 `visionProvider` / `visionModel` / `mode` 会 loud 失败。
+`visionProvider` / `visionModel` 指向一个**具备视觉能力**的模型（即视觉引擎），它可与下游纯文本主模型不同。没有 settings 层时，schema 默认值（`dashscope` / `qwen3.8-max`）生效。
 
 ### 2. 启动并触发
 

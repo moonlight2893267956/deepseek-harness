@@ -18,18 +18,22 @@ After vision preprocessing, the entered message is rebuilt with `createUserMessa
 
 ## Configuration
 
-Every field varies by deployment and is validated at load; missing required fields fail loud.
+Every field varies by deployment. The plugin registers a `dsh-vision` settings section: the entry `config` in cordis.yml (or the base bundle) is the **base** layer, and user overrides in `settings.yaml` (or the web UI) form the **user** layer. When the settings service is absent (e.g. a headless run without a settings provider), the section falls back to the entry config, so no config is lost. `visionProvider` / `visionModel` carry schema defaults (`dashscope` / `qwen3.8-max`) so an empty base still validates; the real deployment values come from the user layer.
 
 | Key | Contract |
 | --- | --- |
-| `visionProvider` | Vision engine provider route, reused through the registered `LlmRuntime` routing. Required. |
-| `visionModel` | Vision engine model id. Required. |
+| `visionProvider` | Vision engine provider route, reused through the registered `LlmRuntime` routing. Optional; default `dashscope`. |
+| `visionModel` | Vision engine model id. Optional; default `qwen3.8-max`. |
 | `visionPrompt` | System prompt sent to the vision model. Optional; a sane default asks for a faithful picture description (transcribe text when present, otherwise describe the scene, never invent a filename). |
 | `visionMaxTokens` | `max_tokens` cap sent to the vision sub-call. Optional; when unset the request carries no `max_tokens` and the vision model's own output ceiling applies (qwen3.8-max: 128K). Set it to raise the cap for long screenshots whose full transcription would otherwise be cut off at the model default. Must be a positive integer within the vision model's output ceiling. |
 | `visionProvenance` | Prefix prepended to the description in `replace` mode, signaling the downstream model that the text came from an image. Optional; default `[Image understanding]\n`; set to empty string to disable. |
-| `mode` | `replace` swaps the image for text; `append` keeps the image and adds text. Required. |
+| `mode` | `replace` swaps the image for text; `append` keeps the image and adds text. Optional; default `replace`. |
 | `enabled` | Master switch; when `false` the listener passes messages through. Default `true`. |
 | `onFailure` | `pass` keeps the image, `throw` aborts, `skip` drops the image on recognition failure. Default `pass`. |
+
+### Editing from the web UI
+
+The "Model" settings page (hosted by `@deepseek-ai/dsh-client-ui-settings-models`) renders a **Vision understanding** card backed by the `dsh-vision` namespace. Each field writes through the wire immediately (`api.settings.mutate` set/unset), so a change hot-applies to the running plugin without a restart. A field carrying a user override shows an amber dot; clicking its reset unsets the one path back to the base layer, and "Reset all customized" clears every override. The live `VisionService.enabled` / `VisionService.mode` are updated by the settings section hook on every attach/detach/commit, so the `agent/pre-step` listener and host image admission always read the latest value.
 
 ## Per-model preprocessing opt-in
 
@@ -57,23 +61,17 @@ The vision plugin is **not mounted by default**. Add it to a Cordis configuratio
 
 ### 1. Mount the plugin in a profile / patch
 
-Add the following as an `insert` entry to your Cordis configuration (a profile's `cordis.yml`, or a user-level patch such as `~/.dsh/cordis.patch.yml`):
+Add the following as an `insert` entry to your Cordis configuration (a profile's `cordis.yml`, or a user-level patch such as `~/.dsh/cordis.patch.yml`). The plugin carries **no `config`** — deployment values live in the `dsh-vision` settings section (see "Configuration"):
 
 ```yaml
 - insert:
     - id: vision
       name: '@deepseek-ai/dsh-vision'
-      config:
-        visionProvider: dashscope        # reuse a registered LlmRuntime provider route
-        visionModel: qwen3.8-max         # a vision-capable model (the vision engine)
-        mode: replace                    # replace | append
-        onFailure: pass                  # pass | skip | throw
-        # visionPrompt: custom system prompt (optional)
-        # visionProvenance: 'Image understanding:\n'   # custom prefix (optional)
-        # visionMaxTokens: 128000      # cap the vision sub-call output (optional; raise for long screenshots)
+      # visionProvider / visionModel / mode / onFailure / ... belong in settings.yaml (dsh-vision)
+      # or the web UI "Model" page → "Vision understanding" card.
 ```
 
-`visionProvider` / `visionModel` point at a **vision-capable** model (the vision engine), which may differ from the downstream text-only main model. Config is validated at load; missing `visionProvider` / `visionModel` / `mode` fails loud.
+`visionProvider` / `visionModel` point at a **vision-capable** model (the vision engine), which may differ from the downstream text-only main model. With no settings layer present, the schema defaults (`dashscope` / `qwen3.8-max`) apply.
 
 ### 2. Start and trigger
 

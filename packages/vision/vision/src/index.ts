@@ -18,15 +18,16 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
-import type { VisionConfig } from './config.ts'
-import { VisionService } from './service.ts'
+import { Config, type VisionConfig } from './config.ts'
+import { NS, VisionService } from './service.ts'
 import { resolveVisionMode } from './resolve-vision-mode.ts'
 
 export type { VisionMode, VisionOnFailure, DescribedImage } from './types.ts'
 export type { VisionConfig } from './config.ts'
 export { Config, DEFAULT_VISION_PROMPT } from './config.ts'
-export { VisionService } from './service.ts'
+export { NS, VisionService } from './service.ts'
 export { resolveVisionMode } from './resolve-vision-mode.ts'
 export type { VisionModeDecision } from './resolve-vision-mode.ts'
 
@@ -39,26 +40,37 @@ export const inject = ['llm', 'attachments']
 
 /**
  * Register the vision service and the `agent/pre-step` listener.
+ *
+ * The deployment config is supplanted by the dsh-vision settings section: the
+ * `entry` config passed at load becomes the `base` layer, while user overrides
+ * in `settings.yaml` (or the UI) form the user layer. When the settings service
+ * is absent (e.g. headless without a settings provider) the section falls back
+ * to this `entry` value, so no config is lost.
  * @param ctx - the plugin context; carries `llm` (vision engine) and `attachments`.
- * @param config - raw vision configuration, validated by {@link Config} at load.
+ * @param config - raw vision configuration, validated by {@link Config} at load; used as the settings base layer.
  */
 export function apply(ctx: Context, config: VisionConfig): void {
-  const resolved: VisionConfig = config
-  // Constructing the service registers it on `ctx.vision` (Cordis Service contract).
-  new VisionService(ctx, resolved)
+  // Dynamic authoritative config source. Until the settings section attaches it
+  // equals the entry config; once attached it resolves from the settings layers.
+  let source: () => VisionConfig = () => config
+  const vision = new VisionService(ctx, config)
+  installSettingsSection(ctx, NS, Config, config, {
+    setSource: (current) => { source = current },
+    onChange: () => { vision.update(source()) },
+  })
 
   ctx.on('agent/pre-step', async (
     payload: { agent: Agent; messages: UserMessage[]; signal: AbortSignal },
     next: () => Promise<PreStepDecision>,
   ): Promise<PreStepDecision> => {
-    if (!resolved.enabled) return next()
+    if (!vision.enabled) return next()
     const { provider, model } = payload.agent.options
     if (!provider || !model) return next()
     const info = await ctx.llm.resolveModelInfo(provider, model)
     const isMultimodal = info.inputModalities?.includes('image') ?? false
     const decision = resolveVisionMode(info.vision, isMultimodal)
     if (!decision.intervene) return next()
-    const preprocessed = await ctx.vision.preprocess(payload.messages, payload.signal)
+    const preprocessed = await vision.preprocess(payload.messages, payload.signal)
     if (preprocessed === payload.messages) return next()
     // `replace` mode rewrites images into text before the model sees them, so image-bearing
     // input is admissible even on a text-only model. Only a text-only model needs the host's
