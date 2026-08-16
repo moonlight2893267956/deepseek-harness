@@ -16,6 +16,7 @@ import type {
   LlmResolvedModelInfo,
   ResolvedRetryPolicy,
   StreamChunk,
+  VisionModelMode,
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -38,6 +39,13 @@ export interface DeepSeekCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link DeepSeekConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /**
+   * Opt-in to vision preprocessing for this model, mirroring the adapter-agnostic
+   * {@link VisionModelMode}; `undefined` lets the harness infer from the model's
+   * `inputModalities`. DeepSeek models are text-only, so this stays unset unless a
+   * deployment wants preprocessing forced on or off for a specific model id.
+   */
+  vision?: VisionModelMode
 }
 
 /**
@@ -111,6 +119,7 @@ function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo 
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
     inputModalities: ['text'],
+    ...model.vision === undefined ? {} : { vision: model.vision },
   }
 }
 

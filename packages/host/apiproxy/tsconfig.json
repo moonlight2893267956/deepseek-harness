@@ -33,6 +33,12 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../ocr/ocr"
+    },
+    {
+      "path": "../../vision/vision"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

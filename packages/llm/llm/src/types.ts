@@ -158,6 +158,16 @@ export interface ModelModalityMap {
 export type ModelModality = ModelModalityMap[keyof ModelModalityMap]
 
 /**
+ * Per-model opt-in to vision preprocessing, set on the model's configuration entry.
+ * `undefined` (unset) means infer from {@link LlmModelInfo.inputModalities}: a
+ * multimodal model needs no preprocessing (it reads images natively), while a
+ * text-only model keeps the deployment-wide `vision.enabled` behavior. `'on'`
+ * forces preprocessing even for a multimodal model; `'off'` forces none even for
+ * a text-only model. The vision pre-step reads this after the global master switch.
+ */
+export type VisionModelMode = 'on' | 'off'
+
+/**
  * One provider route an adapter plugin can activate through configuration,
  * whether or not the route is currently registered. Configuration surfaces
  * merge this directory with `listProviders()` to offer every configurable
@@ -241,6 +251,13 @@ export interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /**
+   * Per-model opt-in to vision preprocessing, set on the model configuration entry.
+   * `undefined` defers to {@link LlmModelInfo.inputModalities}; `'on'` forces
+   * preprocessing, `'off'` forbids it. The vision pre-step reads this after the
+   * deployment-wide master switch.
+   */
+  vision?: VisionModelMode
 }
 
 /** Provider-owned context capacity for one exact provider/model route. */

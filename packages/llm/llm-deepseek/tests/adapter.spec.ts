@@ -791,6 +791,32 @@ describe('plugin registration and config', () => {
       })
   })
 
+  it('carries a model’s vision opt-in through both the list and the resolve seam', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      models: [
+        { id: 'vision-off', vision: 'off' },
+        { id: 'vision-on', vision: 'on' },
+        { id: 'inferred' },
+      ],
+    })
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
+      { provider: 'deepseek-official', id: 'vision-off', name: 'vision-off', inputModalities: ['text'], vision: 'off' },
+      { provider: 'deepseek-official', id: 'vision-on', name: 'vision-on', inputModalities: ['text'], vision: 'on' },
+      { provider: 'deepseek-official', id: 'inferred', name: 'inferred', inputModalities: ['text'] },
+    ])
+    // The resolver hands the vision plugin the same flag, and absent stays
+    // absent so the plugin's "infer from modalities" default keeps working.
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'vision-off'))
+      .resolves.toMatchObject({ vision: 'off' })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'vision-on'))
+      .resolves.toMatchObject({ vision: 'on' })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'inferred'))
+      .resolves.not.toHaveProperty('vision')
+  })
+
   it('uses exact model capacity before the adapter-wide default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

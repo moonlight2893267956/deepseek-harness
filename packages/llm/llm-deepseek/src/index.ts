@@ -86,6 +86,11 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  // Vision preprocessing opt-in, mirrored from the `LlmModelInfo.vision`
+  // seam field. Absent lets the vision plugin infer from `inputModalities`;
+  // the harness never reads it, so a deployment can name it without the
+  // vision plugin mounted. `z.literal` tristate keeps it a closed set.
+  vision: z.union([z.const('on'), z.const('off')]),
 })
 
 export const Config: z<Config> = z.object({
@@ -142,6 +147,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.vision === undefined ? {} : { vision: model.vision },
     }
   })
 }

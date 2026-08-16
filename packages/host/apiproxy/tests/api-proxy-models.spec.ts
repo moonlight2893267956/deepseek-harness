@@ -109,6 +109,7 @@ async function harness(logged?: {
     session,
     status: 'running',
     ctx,
+    options: { provider: 'deepseek-official', model: 'deepseek-chat' },
     inbox: { nextTurn: [], nextStep: [] },
   } as unknown as Agent
   ctx.agents.register(agent)
@@ -126,6 +127,17 @@ function registerTextOnly(ctx: Context): void {
       return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
     }
   }('Text Only', []))
+}
+
+/** Variant of {@link registerTextOnly} whose model declares `vision: 'off'`. */
+function registerVisionOffTextOnly(ctx: Context): void {
+  ctx.llm.registerAdapter(['vision-off-text-only'], new class extends CatalogAdapter {
+    override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+      return Promise.resolve({
+        provider, id: model, name: model, inputModalities: ['text'], vision: 'off',
+      })
+    }
+  }('Vision-Off Text Only', []))
 }
 
 describe('Web session model selection', () => {
@@ -196,7 +208,7 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
-  it('refuses a text-only selection while durable or pending image content remains visible', async () => {
+  it('refuses a text-only selection while durable or pending image content remains visible and no image-stripping pre-step is composed', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)
     const api = createApiProxy(ctx, {
@@ -231,6 +243,265 @@ describe('Web session model selection', () => {
     expect(expectValue(await api.sessions.selectModel(request({
       sessionId, provider: 'text-only', model: 'plain',
     }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps agent.options in lockstep with a successful selection', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    // Pre-step listeners (vision deciding whether to preprocess) read
+    // `agent.options` before any request is assembled; request routing alone
+    // reads the selection. A switch must update both, or the pre-step would
+    // keep preprocessing on the stale creation-time model.
+    expect(agent.options).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
+    expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max',
+    })))
+    expect(agent.options).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+    await ctx.fiber.dispose()
+  })
+
+  it('admits a text-only selection when a replace-mode vision pre-step is composed and only entering images remain', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    // A replace-mode vision pre-step folds *entering* image blocks into text before
+    // the model call, so admission bypasses the rejection for those images. selectModel
+    // cannot observe the future `agent.imageAdmissionBypass` write, so it consults the
+    // configured pre-step itself.
+    ctx.provide('vision', { enabled: true, mode: 'replace' } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const image = {
+      type: 'image' as const,
+      attachment: { attachmentId: 'att-pending', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 },
+    }
+    ;(agent.inbox.nextTurn as UserMessage[]).push({
+      id: 'pending-image', role: 'user', source: { kind: 'user' }, content: [image],
+    } as never)
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses a text-only selection when a replace-mode vision pre-step is composed but history images cannot be revisited', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    // History images were persisted at their own entry; a pre-step only runs on
+    // messages that *enter* a step, so the text-only rejection must hold here even
+    // though vision replace is composed. Compaction is the sanctioned clear.
+    ctx.provide('vision', { enabled: true, mode: 'replace' } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const image = {
+      type: 'image' as const,
+      attachment: { attachmentId: 'att-history', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 },
+    }
+    agent.session.append('user/message', {
+      id: 'image-message', role: 'user', source: { kind: 'user' }, content: [image],
+    } as never, { surfaceOp: 'append' })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses a text-only selection when a replace-mode OCR pre-step is composed but history images cannot be revisited', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    ctx.provide('ocr', { enabled: true, mode: 'replace' } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const image = {
+      type: 'image' as const,
+      attachment: { attachmentId: 'att-history', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 },
+    }
+    agent.session.append('user/message', {
+      id: 'image-message', role: 'user', source: { kind: 'user' }, content: [image],
+    } as never, { surfaceOp: 'append' })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('still refuses a text-only selection when a vision pre-step is composed in append mode', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    // `append` keeps the image block on the model, so the text-only rejection still holds.
+    ctx.provide('vision', { enabled: true, mode: 'append' } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const image = {
+      type: 'image' as const,
+      attachment: { attachmentId: 'att-history', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 },
+    }
+    agent.session.append('user/message', {
+      id: 'image-message', role: 'user', source: { kind: 'user' }, content: [image],
+    } as never, { surfaceOp: 'append' })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('still refuses a text-only selection when the vision pre-step is configured but opts out of this model', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerVisionOffTextOnly(ctx)
+    // Vision is replace-mode and would otherwise strip images, but the target
+    // model explicitly declares `vision: 'off'`, so the pre-step will not run.
+    ctx.provide('vision', { enabled: true, mode: 'replace' } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const image = {
+      type: 'image' as const,
+      attachment: { attachmentId: 'att-history', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 },
+    }
+    agent.session.append('user/message', {
+      id: 'image-message', role: 'user', source: { kind: 'user' }, content: [image],
+    } as never, { surfaceOp: 'append' })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'vision-off-text-only', model: 'plain',
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('admits prompt images for a text-only selection when a replace-mode OCR pre-step is composed', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
+    const saveImage = vi.fn((input: { data: Uint8Array; mediaType: 'image/png' }) => Promise.resolve({
+      attachmentId: `att-${String(input.data[0])}`,
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+    }))
+    ctx.provide('attachments', {
+      imageLimits: {
+        maxImageBytes: 4,
+        maxImagesPerMessage: 2,
+        maxMessageImageBytes: 4,
+        maxImagePixels: 4,
+        mediaTypes: ['image/png'],
+      },
+      validateImage,
+      saveImage,
+    } as never)
+    ctx.provide('ocr', { enabled: true, mode: 'replace' } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'text-only', model: 'plain' }),
+      cwd: '/tmp',
+    })
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' },
+        { type: 'text' as const, text: 'what is shown' },
+      ],
+    }))
+    expect(result.result.ok).toBe(true)
+    expect(followup).toHaveBeenCalledTimes(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('still refuses prompt images for a text-only selection without an image-stripping OCR seam', async () => {
+    const { ctx, sessionId } = await harness()
+    registerTextOnly(ctx)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'text-only', model: 'plain' }),
+      cwd: '/tmp',
+    })
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }],
+    }))
+    expect(result.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('admits prompt images for a text-only selection when vision replace pre-step is composed', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    // A vision replace pre-step declares image admission bypass on the agent: it
+    // rewrites images into text before the model sees them, so a text-only model
+    // admits image-bearing input.
+    agent.imageAdmissionBypass = true
+    const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
+    const saveImage = vi.fn((input: { data: Uint8Array; mediaType: 'image/png' }) => Promise.resolve({
+      attachmentId: `att-${String(input.data[0])}`,
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+    }))
+    ctx.provide('attachments', {
+      imageLimits: {
+        maxImageBytes: 4,
+        maxImagesPerMessage: 2,
+        maxMessageImageBytes: 4,
+        maxImagePixels: 4,
+        mediaTypes: ['image/png'],
+      },
+      validateImage,
+      saveImage,
+    } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'text-only', model: 'plain' }),
+      cwd: '/tmp',
+    })
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' },
+        { type: 'text' as const, text: 'what is shown' },
+      ],
+    }))
+    expect(result.result.ok).toBe(true)
+    expect(followup).toHaveBeenCalledTimes(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('still refuses prompt images for a text-only selection without an image-stripping pre-step', async () => {
+    const { ctx, sessionId } = await harness()
+    registerTextOnly(ctx)
+    // No OCR seam and no vision bypass: text-only model refuses images.
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'text-only', model: 'plain' }),
+      cwd: '/tmp',
+    })
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }],
+    }))
+    expect(result.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
+    })
     await ctx.fiber.dispose()
   })
 

@@ -61,6 +61,14 @@ import {
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves `ctx.get('tasks')` to the background job registry.
 import type {} from '@deepseek-ai/dsh-jobs'
+// Type-only: resolves `ctx.get('ocr')` to the OCR service (optional composition).
+import type {} from '@deepseek-ai/dsh-ocr'
+// Type-only: resolves `ctx.get('vision')` to the vision service (optional composition).
+import type {} from '@deepseek-ai/dsh-vision'
+// `resolveVisionMode` is the single source of truth for per-model vision opt-in,
+// shared with the vision pre-step so this gateway cannot drift from it.
+import { resolveVisionMode } from '@deepseek-ai/dsh-vision'
+import type { LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
@@ -234,6 +242,30 @@ function imageInEvent(event: SessionEvent, match: (ref: ImageAttachmentRef) => b
 /** True when the current model-visible surface contains an image. */
 function messagesHaveImage(messages: readonly { content: readonly ContentBlock[] }[]): boolean {
   return messages.some(message => contentHasImage(message.content))
+}
+
+/**
+ * Decide whether a configured image-stripping pre-step removes images before
+ * the model sees them, for a given target model.
+ *
+ * Aggregates the static OCR and vision deployment state so the `selectModel`
+ * and `prompt` admission paths cannot drift: both must agree that an image is
+ * stripped (and so a text-only selection is admissible) for the same model.
+ * The runtime effect {@link Agent.imageAdmissionBypass} set by the vision
+ * pre-step is left to the caller — selectModel runs before that effect exists.
+ */
+function imageStrippingPreStepConfigured(
+  ctx: Context,
+  modelInfo: LlmResolvedModelInfo | undefined,
+): boolean {
+  const ocr = ctx.get('ocr')
+  if (ocr !== undefined && ocr.enabled && ocr.mode === 'replace') return true
+  const vision = ctx.get('vision')
+  if (vision !== undefined && vision.enabled && vision.mode === 'replace' && modelInfo !== undefined) {
+    const isMultimodal = modelInfo.inputModalities?.includes('image') ?? false
+    if (resolveVisionMode(modelInfo.vision, isMultimodal).bypass) return true
+  }
+  return false
 }
 
 /** Resolve the first reference matching one opaque id. */
@@ -2294,12 +2326,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
             const pendingImage = [...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep]
               .some(message => contentHasImage(message.content))
-            if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {
+            const historyHasImage = messagesHaveImage(found.agent.session.deriveMessages())
+            if (pendingImage || historyHasImage) {
               const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model)
-              if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+              // A text-only model normally rejects images, but an image-rewriting pre-step
+              // (e.g. OCR `replace` mode or vision `replace` mode) folds *entering* image
+              // blocks into text before the model call, so admission bypasses the rejection
+              // for that agent. Multimodal models pass on their own `inputModalities` and
+              // never reach this branch. The vision pre-step only sets
+              // `agent.imageAdmissionBypass` after the next prompt, so selectModel must
+              // consult the configured pre-step itself to keep admission in lockstep with
+              // prompt admission.
+              const stripsEntering = imageStrippingPreStepConfigured(ctx, info)
+                || found.agent.imageAdmissionBypass === true
+              // A pre-step runs only on messages that *enter* a step; images already
+              // persisted in the session's derived history were folded at their own
+              // entry (or never, under a multimodal model) and cannot be revisited.
+              // Compaction is the sanctioned way to clear them. So a text-only target is
+              // admissible only when no history image remains, and entering images are
+              // stripped by the pre-step.
+              const textOnly = info.inputModalities !== undefined && !info.inputModalities.includes('image')
+              if (textOnly && (historyHasImage || !stripsEntering)) {
                 return err(request, {
                   code: 'model-unavailable',
-                  message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,
+                  message: `Model "${resolved.model}" does not accept image input, and this session's history already contains images that vision pre-processing cannot revisit; compact the session or select an image-capable model.`,
                   details: { provider, model },
                 })
               }
@@ -2312,6 +2362,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 : { reasoningEffort: resolved.reasoningEffort },
             }
             selectionFor(found.agent).current = selected
+            // Keep `agent.options` in lockstep with the selection: request
+            // routing reads the selection through `agent/request`, but pre-step
+            // listeners (e.g. vision deciding whether to preprocess) read
+            // `agent.options` before any request is assembled. Without this
+            // sync, a switch away from a `vision: 'on'` model would still make
+            // the pre-step preprocess on the stale creation-time model.
+            found.agent.options.provider = selected.provider
+            found.agent.options.model = selected.model
             try {
               await defaults.saveDefaultModelSelection?.(selected)
             } catch (error: unknown) {
@@ -2482,13 +2540,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
-            if (hasImage) {
+            const historyHasImage = messagesHaveImage(agent.session.deriveMessages())
+            if (hasImage || historyHasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+              // A composed OCR or vision pre-step in replace mode folds *entering* image
+              // blocks into text before the model call, so a text-only selection still
+              // admits images arriving now; without such a seam, refuse the unsupported
+              // modality. History images, by contrast, were persisted at their own entry
+              // and cannot be revisited by a pre-step — the same constraint `selectModel`
+              // enforces, so the two admission paths stay in lockstep.
+              const stripsEntering = imageStrippingPreStepConfigured(ctx, modelInfo)
+                || agent.imageAdmissionBypass === true
+              const textOnly = modelInfo.inputModalities !== undefined
+                && !modelInfo.inputModalities.includes('image')
+              if (textOnly && (historyHasImage || !stripsEntering)) {
                 return err(request, {
                   code: 'attachment-error',
-                  message: `Model "${current.model}" does not support image input.`,
+                  message: `Model "${current.model}" does not support image input, and this session's history already contains images that vision pre-processing cannot revisit; compact the session or select an image-capable model.`,
                   details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
                 })
               }

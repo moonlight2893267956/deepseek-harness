@@ -257,6 +257,38 @@ describe('hand-declared providers', () => {
     expect((await ctx.llm.resolveModelInfo('anthropic', vision.id)).inputModalities).toEqual(vision.input)
   })
 
+  it('carries a model’s vision opt-in to the seam’s model metadata', async () => {
+    // The vision field is a harness-only decision that pi-ai's `Model` cannot
+    // carry, so it must survive the settings document → catalog materialization
+    // → `LlmModelInfo`/`LlmResolvedModelInfo.vision` chain like modalities do.
+    const ctx = await harness({
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: KEY_ENV,
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          models: [
+            { id: 'forced-on', vision: 'on', input: ['text'] },
+            { id: 'forced-off', vision: 'off', input: ['text'] },
+            { id: 'inferred', input: ['text'] },
+          ],
+        },
+      },
+    })
+
+    const info = async (model: string) => ctx.llm.resolveModelInfo('acme-gateway', model)
+    expect((await info('forced-on')).vision).toBe('on')
+    expect((await info('forced-off')).vision).toBe('off')
+    // Absent stays absent: the vision plugin's resolver reads `undefined` as
+    // "infer from modalities", so an undeclared model must not gain a field.
+    expect((await info('inferred')).vision).toBeUndefined()
+
+    const listed = await ctx.llm.listModels('acme-gateway')
+    expect(listed.find(model => model.id === 'forced-on')?.vision).toBe('on')
+    expect(listed.find(model => model.id === 'forced-off')?.vision).toBe('off')
+    expect(listed.find(model => model.id === 'inferred')?.vision).toBeUndefined()
+  })
+
   it('reads an entry’s empty modality list as no answer, and the route’s as unserviceable', () => {
     // Absent and empty are the same request on an entry, exactly as they are
     // for the route's `models` list — which matters because the config schema

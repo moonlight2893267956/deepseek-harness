@@ -68,6 +68,15 @@ export interface Agent {
   readonly options: AgentOptions
   /** The live session this agent drives; its log is the durable source of truth. */
   readonly session: Session
+  /**
+   * Set by an image-rewriting pre-step (e.g. vision `replace` mode) so host image
+   * admission admits image-bearing input even on a text-only model: the pre-step
+   * converts images to text before the model sees them, so the model never receives
+   * an image. Absent (`undefined`) when no pre-step strips images; a multimodal model
+   * does not need it because its own `inputModalities` already admits images. A
+   * pre-step plugin sets this via its agent-scoped effect; host admission only reads it.
+   */
+  imageAdmissionBypass?: true
   /** The agent-owned projection of durable pending work. */
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */

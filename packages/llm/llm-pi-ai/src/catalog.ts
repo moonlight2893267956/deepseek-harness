@@ -23,6 +23,7 @@ import type {
   Provider,
   ThinkingLevelMap,
 } from '@earendil-works/pi-ai'
+import type { VisionModelMode } from '@deepseek-ai/dsh-llm'
 
 /**
  * Pricing for a model the installed catalog does not describe. The harness
@@ -225,6 +226,15 @@ export interface PiAiModelProfile {
    * mid-turn.
    */
   input?: PiAiModality[]
+  /**
+   * Vision pre-processing opt-in for this model, mirroring {@link VisionModelMode}.
+   * Absent lets the vision plugin infer from `input`: a model that declares
+   * images skips pre-processing (it reads them natively), a text-only model gets
+   * pre-processing by default. `'on'` forces pre-processing, `'off'` forbids it.
+   * The harness never reads this field itself — it flows through
+   * {@link LlmResolvedModelInfo.vision} to the vision plugin's decision.
+   */
+  vision?: VisionModelMode
   /**
    * Selectable reasoning efforts. Absent inherits the installed catalog
    * entry's capability (a hand-declared model has none and does not reason);
@@ -433,6 +443,15 @@ export interface RouteCatalog {
    * picked, so only an explicit configuration lands here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /**
+   * Per-model vision pre-processing opt-in this profile explicitly configured,
+   * by model id. Absent for a model means "infer from modalities", the same
+   * `undefined` the vision plugin's resolver treats as the default. Carried
+   * separately from `Model` because pi-ai's catalog type does not model it;
+   * mirroring `configuredMaxTokens`, which also lifts a harness-only fact out
+   * of the pi-ai `Model` shape.
+   */
+  visionByModel: ReadonlyMap<string, VisionModelMode | undefined>
 }
 
 /**
@@ -489,6 +508,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     || request.compat?.supportsReasoningEffort !== undefined
   const seen = new Set<string>()
   const configuredMaxTokens = new Map<string, number>()
+  const visionByModel = new Map<string, VisionModelMode | undefined>()
   const models = entries.map((entry) => {
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
@@ -518,6 +538,11 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     // Only a value the profile named is a deployment choice; the catalog's is
     // the model's capability and stays out of request defaults.
     if (entry.maxTokens !== undefined) configuredMaxTokens.set(entry.id, entry.maxTokens)
+    // A harness-only fact the pi-ai `Model` type cannot carry: a profile's
+    // explicit vision opt-in (or its absence) for this model. The vision plugin
+    // reads it through `LlmResolvedModelInfo.vision`; the catalog's own
+    // modality observation is the inference fallback, not an override.
+    visionByModel.set(entry.id, entry.vision)
     return {
       // The installed entry lays the floor, and the fields below override it.
       // Enumerating instead would silently drop every `Model` field this
@@ -542,5 +567,5 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     invalid(provider, 'sets compat reasoning switches, but no model on the route speaks openai-completions;'
       + ' thinkingFormat and supportsReasoningEffort exist only on that protocol')
   }
-  return { models, configuredMaxTokens }
+  return { models, configuredMaxTokens, visionByModel }
 }

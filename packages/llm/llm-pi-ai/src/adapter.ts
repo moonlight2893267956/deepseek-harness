@@ -238,13 +238,17 @@ export class PiAiAdapter extends LlmAdapter {
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     return Promise.resolve().then(() => {
       const snapshot = this.current()
-      this.profileOf(snapshot, provider)
-      return snapshot.models.getModels(provider).map(model => ({
-        provider,
-        id: model.id,
-        name: model.name,
-        inputModalities: [...model.input],
-      }))
+      const profile = this.profileOf(snapshot, provider)
+      return snapshot.models.getModels(provider).map((model) => {
+        const vision = profile.visionByModel.get(model.id)
+        return {
+          provider,
+          id: model.id,
+          name: model.name,
+          inputModalities: [...model.input],
+          ...vision === undefined ? {} : { vision },
+        }
+      })
     })
   }
 
@@ -261,11 +265,17 @@ export class PiAiAdapter extends LlmAdapter {
       // Only a cap the deployment configured is a request default; the
       // catalog's `maxTokens` sizes the model and stops there.
       const configuredMaxTokens = profile.configuredMaxTokens.get(model)
+      // A harness-only fact pi-ai's `Model` cannot carry: the profile's explicit
+      // vision opt-in for this model, or `undefined` to let the vision plugin
+      // infer from `inputModalities`. Both `selectModel` admission and the vision
+      // pre-step read this flag through `LlmResolvedModelInfo.vision`.
+      const vision = profile.visionByModel.get(model)
       return {
         provider,
         id: model,
         name: resolvedModel.name,
         inputModalities: [...resolvedModel.input],
+        ...vision === undefined ? {} : { vision },
         context: { contextWindow: resolvedModel.contextWindow },
         ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
         ...reasoningInfo(resolvedModel, defaultLevel),

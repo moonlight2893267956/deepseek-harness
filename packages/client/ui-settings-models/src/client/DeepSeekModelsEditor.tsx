@@ -17,7 +17,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'vision'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -343,6 +343,22 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <label className={styles['modelField']}>
+                        <span className={styles['modelFieldLabel']}>{props.t('modelVision')}</span>
+                        <select
+                          className={`${styles['input']} ${styles['selectInput']}`}
+                          value={typeof model['vision'] === 'string' ? model['vision'] : ''}
+                          aria-label={`${props.t('modelVision')} ${String(index + 1)}`}
+                          disabled={props.disabled}
+                          onChange={(event) => {
+                            update(index, 'vision', event.target.value === '' ? undefined : event.target.value)
+                          }}
+                        >
+                          <option value="">{props.t('modelVisionInfer')}</option>
+                          <option value="on">{props.t('modelVisionOn')}</option>
+                          <option value="off">{props.t('modelVisionOff')}</option>
+                        </select>
+                      </label>
                     </div>
                   )
                   : null}

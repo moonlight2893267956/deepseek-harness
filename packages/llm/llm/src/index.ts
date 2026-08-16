@@ -603,6 +603,7 @@ export class LlmRuntime extends Service {
         name: model.name,
         ...model.description === undefined ? {} : { description: model.description },
         ...inputModalities === undefined ? {} : { inputModalities },
+        ...model.vision === undefined ? {} : { vision: model.vision },
       }
     })
   }
@@ -671,6 +672,7 @@ export class LlmRuntime extends Service {
       ...inputModalities === undefined ? {} : { inputModalities },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
+      ...resolved.vision === undefined ? {} : { vision: resolved.vision },
     }
     const reasoning = resolved.reasoning
     if (reasoning === undefined) return info

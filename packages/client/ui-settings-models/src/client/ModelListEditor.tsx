@@ -417,6 +417,22 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelVision')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={typeof model['vision'] === 'string' ? model['vision'] : ''}
+                    aria-label={`${t('modelVision')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      patch(index, { vision: event.target.value === '' ? undefined : event.target.value })
+                    }}
+                  >
+                    <option value="">{t('modelVisionInfer')}</option>
+                    <option value="on">{t('modelVisionOn')}</option>
+                    <option value="off">{t('modelVisionOff')}</option>
+                  </select>
+                </label>
               </div>
             )
             : null}

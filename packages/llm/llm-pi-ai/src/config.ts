@@ -20,7 +20,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ResolvedRetryPolicy, RetryPolicyConfig, VisionModelMode } from '@deepseek-ai/dsh-llm'
 import { MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
 import type {
   PiAiCompatProfile,
@@ -166,6 +166,13 @@ export interface ResolvedPiAiProviderProfile
    * own, so a catalog capability must not appear here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /**
+   * Per-model vision pre-processing opt-in lifted from each profile's
+   * `models`/`modelOverrides` entries, parallel to {@link RouteCatalog.visionByModel}.
+   * The adapter reads it into `LlmResolvedModelInfo.vision` so the vision
+   * plugin can decide whether to pre-process this model's images.
+   */
+  visionByModel: ReadonlyMap<string, VisionModelMode | undefined>
 }
 
 /** Plugin configuration: the provider routes this instance owns. */
@@ -214,6 +221,11 @@ const modelFields = {
   // materializes `[]` for an absent array, and resolution reads that as "no
   // answer here" so the catalog entry below still applies.
   input: z.array(z.union(MODALITIES)),
+  // Vision pre-processing opt-in, mirrored from the `LlmModelInfo.vision`
+  // seam field. Absent (the common case) lets the vision plugin infer from
+  // `input`; the harness never reads it, so a profile can name it without
+  // the vision plugin mounted. `z.literal` tristate keeps it a closed set.
+  vision: z.union([z.const('on'), z.const('off')]),
   // The union, not a bare dict: schemastery materializes an absent dict as
   // `{}`, and absent must stay distinguishable — it means "inherit the
   // installed catalog's capability", while `false` disables reasoning.
@@ -358,6 +370,7 @@ export function resolveProfiles(
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog.configuredMaxTokens,
+      visionByModel: catalog.visionByModel,
       piProvider: buildProvider({
         provider,
         displayName,
