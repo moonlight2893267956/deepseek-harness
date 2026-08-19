@@ -84,6 +84,11 @@
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
 
+    # Cross-session per-day token usage for the Usage settings page (the
+    # usageStats Remote namespace).
+    - id: usage-stats
+      name: '@deepseek-ai/dsh-usage-stats'
+
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
     # an overlay to pin the interaction.
@@ -245,6 +250,10 @@
     # assistant-message action strip, over the messageFeedback Remote.
     - id: ui-message-feedback
       name: '@deepseek-ai/dsh-client-ui-message-feedback'
+
+    # Usage settings page: per-day token chart over the usageStats Remote.
+    - id: ui-usage
+      name: '@deepseek-ai/dsh-client-ui-usage'
 
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection

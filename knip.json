@@ -511,6 +511,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/session/usage-stats": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/util/home-paths": {
       "entry": [
         "tests/**/*.spec.ts"
