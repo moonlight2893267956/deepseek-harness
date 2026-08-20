@@ -745,6 +745,22 @@ export const IconDataOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/**
+ * ic_ds_chart_outline_16 — bar-chart glyph for the Usage settings nav. Three
+ * ascending bars rising from a baseline read as a per-period token-usage trend,
+ * matching the section's stacked daily-usage chart. Harness-only hand-authored
+ * approximation: the deepsuite icon set ships no chart extract, so this stands
+ * in the way the sparkle and fish glyphs do until an exact export exists.
+ */
+export const IconChartOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M3.2 9.4H5.6V13H3.2ZM6.8 6.2H9.2V13H6.8ZM10.4 3H12.8V13H10.4ZM2 12.8H14V14H2Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** ic_send_outline_14 (figma extract): thin-stroke upward send arrow. */
 export const IconSendOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

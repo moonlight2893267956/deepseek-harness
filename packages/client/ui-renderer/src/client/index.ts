@@ -20,6 +20,9 @@ export type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 export type { SessionProviderProps } from './session-provider.tsx'
 
+/** Bind a bare observable source to a typed uSES selector hook (React client only). */
+export { bindSnapshotSelector } from './bind.ts'
+
 /** Mount operation exposed to the framework-free boot kernel. */
 export interface UiRendererService {
   /**

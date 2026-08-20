@@ -1,0 +1,19 @@
+# The dsh-bmad bundle patch: inserts BMAD Method adapter plugins over the
+# base profile. These plugins provide native TOML resolution (no Python/uv
+# required) and config-to-prompt-variable bridging for projects that have
+# BMAD installed (`npx bmad-method install`).
+#
+# When `_bmad/` is absent, the config provider registers nothing and the
+# customize tool reports the skill directory not found — both are valid
+# empty state for projects without BMAD.
+
+- insert:
+    # Reads _bmad/config.toml and registers bmad_* prompt variables.
+    # Requires the system-prompt registry from the host composition.
+    - id: bmad-config
+      name: '@deepseek-ai/dsh-bmad'
+
+    # Provides the bmad_resolve_customize model-facing tool.
+    # Requires the tools registry from the host composition.
+    - id: bmad-customize
+      name: '@deepseek-ai/dsh-bmad/customize'

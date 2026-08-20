@@ -36,7 +36,7 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../web-react"
+      "path": "../ui-renderer"
     }
   ]
 }
